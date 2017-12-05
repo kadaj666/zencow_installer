@@ -34,6 +34,23 @@ $ ./start_setup.sh
 ```
 4. Wait untill install is done
 
+### Additional info
+After install take a look at lines with **TASK [debug]** they contain generated information like node Z_ADDR.
+
+Example:
+```
+TASK [Get node shielded adress] **********************************************************************************************
+changed: [node]
+
+TASK [debug] **********************************************************************************************
+ok: [node] => {
+    "msg": "zcEAnsZhLBkei7ITfUm8YSFCCchYgRiJ6ywFYKtP3xKd9JtpVYkmK5aMTXBGS4FrDQnYuEvQ2BZUyhMsqRcyRa9eYR3RjwX"
+}
+```
+
+Where "TASK [Get node shielded adress]" - is the command
+and "TASK [debug]" - is the answer
+
 ---
 
 Our site https://www.zencow.tech/
