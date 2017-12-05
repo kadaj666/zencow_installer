@@ -1,0 +1,292 @@
+- hosts: all
+  vars:
+    pwd_usr: "{{ lookup('password', '/dev/null length=16 chars=ascii_letters') }}"
+    pwd_pss: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters') }}"
+  tasks:
+  - set_fact:
+        pwd_user: "{{ pwd_usr }}"
+        pwd_pass: "{{ pwd_pss }}"
+  - debug:
+        msg: "Name: {{ pwd_user }}"
+  - debug:
+        msg: "Password: {{ pwd_pass }}"
+
+#Creating new user/pass
+  - name: Creating user "{{ new_user }}" with sudo access
+    user: 
+      name: "{{ new_user }}"
+      password: "{{ new_user_pass | password_hash('sha512') }}"
+
+  - name: Setting {{ new_user }} permissions
+    shell: usermod -a -G sudo {{ new_user }}
+
+#Setup requirements
+  - name: Updating apt
+    apt: update_cache=true
+
+  - name: Installing https transport
+    apt: name=apt-transport-https state=latest
+
+  - name: Remove UFW
+    apt: name=ufw state=absent
+
+  - name: Installing lsb-release
+    apt: name=lsb-release state=latest
+
+  - name: Installing git
+    apt: name=git state=latest
+
+  - name: Installing cron
+    apt: name=cron state=latest
+
+  - name: Installing socat
+    apt: name=socat state=latest
+
+  - name: Installing curl
+    apt: name=curl state=latest
+
+#Installing zen
+  - name: Adding zencash repo
+    shell: echo 'deb https://zencashofficial.github.io/repo/ '$(lsb_release -cs)' main' | sudo tee --append /etc/apt/sources.list.d/zen.list
+
+  - name: Adding zencash repo srv
+    shell: gpg --keyserver ha.pool.sks-keyservers.net --recv 219F55740BBF7A1CE368BA45FB7053CE4991B669
+
+  - name: Adding zencash repo key
+    shell: gpg --export 219F55740BBF7A1CE368BA45FB7053CE4991B669 | sudo apt-key add -
+
+  - name: Updating apt
+    apt: update_cache=true
+
+  - name: Installing zen
+    apt: name=zen state=latest
+
+  - name: Fetching zen params
+    shell: /usr/bin/zen-fetch-params
+    register: fetch_zen_params
+    become: yes
+    become_user: "{{new_user}}"
+
+  - name: Creates zen directory
+    file: 
+      path: /home/{{new_user}}/.zen/
+      state: directory
+      owner: "{{new_user}}"
+      group: "{{new_user}}"
+      mode: 0755
+
+  - name: Creating zen conf file.
+    template: dest=/home/{{new_user}}/.zen/zen.conf mode=755  owner={{ new_user }} src=files/zen.conf.j2  
+
+  - name: First time start zen
+    shell: /usr/bin/zend
+    become: yes
+    become_user: "{{new_user}}"
+
+#Setup certificate
+
+  - name: Setting hostname
+    hostname: name="{{hname}}"
+
+  - name: Installing acme
+    shell: curl https://get.acme.sh | sh
+
+  - name: Create certs
+    shell: /bin/bash acme.sh --issue --standalone -d {{hname}} --force --cert-home /etc/zenssl chdir=/root/.acme.sh/
+    ignore_errors: yes
+
+  - name: Move certs
+    shell: cp /etc/zenssl/{{hname}}/ca.cer /usr/share/ca-certificates/ca.crt
+
+  - name: Reconf zen config.
+    template: dest=/home/{{new_user}}/.zen/zen.conf mode=755  owner={{ new_user }} src=files/sec_zen.conf.j2  
+
+  - name: Stopping zen
+    shell: /usr/bin/zen-cli stop
+    register: zen_stop
+    ignore_errors: yes
+    become: yes
+    become_user: "{{new_user}}"
+
+  - lineinfile:
+      path: /etc/ca-certificates.conf
+      line: 'ca.crt'
+
+  - name: update certs
+    shell: update-ca-certificates
+    register: update_cert
+
+  - name: reconf certs
+    shell: dpkg-reconfigure ca-certificates --frontend=noninteractive
+    register: reconf_cert
+
+  - name: Start zen
+    shell: /usr/bin/zend
+    register: zen_start
+    become: yes
+    become_user: "{{new_user}}"
+
+  - name: Get node info
+    shell: /usr/bin/zen-cli getnetworkinfo
+    register: nodeinfo
+    become: yes
+    become_user: "{{new_user}}"
+
+  - debug: msg="{{ nodeinfo.stdout }}"
+
+  - name: Get node shielded adress
+    shell: /usr/bin/zen-cli z_getnewaddress
+    register: getnewaddress
+    become: yes
+    become_user: "{{new_user}}"
+
+  - debug: msg="{{ getnewaddress.stdout }}"
+
+  - name: Get node shielded adress balance
+    shell: /usr/bin/zen-cli z_gettotalbalance
+    register: gettotalbalance
+    become: yes
+    become_user: "{{new_user}}"
+
+  - debug: msg="{{ gettotalbalance.stdout }}"
+
+# setup pm2 and node
+
+  - name: Installing nodejs
+    apt: name=npm state=latest
+
+
+  - name: Setting nodejs
+    shell: npm install -g n
+  
+  - name: Setting node
+    shell: n 8.9
+
+  - file:
+      path: /home/{{new_user}}/zencash
+      state: directory
+      mode: 0777
+
+  - name: Get secnodetracker repository
+    git: repo=https://github.com/ZencashOfficial/secnodetracker.git dest=/home/{{new_user}}/zencash/secnodetracker
+
+  - name: Install NPM
+    shell: npm install chdir=/home/{{new_user}}/zencash/secnodetracker/
+
+  - file:
+      path: /home/{{new_user}}/zencash/secnodetracker/config/
+      state: directory
+      mode: 0777
+
+  - name: Setting secnodetracker email.
+    template: dest=/home/{{new_user}}/zencash/secnodetracker/config/email mode=755  owner={{ new_user }} src=files/email.j2
+
+  - name: Setting secnodetracker fqdn.
+    template: dest=/home/{{new_user}}/zencash/secnodetracker/config/fqdn mode=755  owner={{ new_user }} src=files/fqdn.j2
+
+  - name: Setting secnodetracker ipv.
+    template: dest=/home/{{new_user}}/zencash/secnodetracker/config/ipv mode=755  owner={{ new_user }} src=files/ipv.j2
+
+  - name: Setting secnodetracker T_Addr.
+    template: dest=/home/{{new_user}}/zencash/secnodetracker/config/stakeaddr mode=755  owner={{ new_user }} src=files/stakeaddr.j2
+
+  - name: Setup node tracker
+    shell: yes "" | node setup.js chdir=/home/{{new_user}}/zencash/secnodetracker/
+    become: yes
+    become_user: "{{new_user}}"
+
+  - name: Starting node
+    shell: node app.js chdir=/home/{{new_user}}/zencash/secnodetracker/
+    become: yes
+    become_user: "{{new_user}}"
+    register: appinfo
+
+  - debug: msg="{{ appinfo.stdout }}"
+
+  - name: Installing pm2
+    shell: npm install pm2 -g chdir=/home/{{new_user}}/zencash/secnodetracker/
+
+  - name: Start app
+    shell: pm2 start app.js --name securenodetracker chdir=/home/{{new_user}}/zencash/secnodetracker/
+    become: yes
+    become_user: "{{new_user}}"
+
+  - name: Setting pm2 at boot
+    shell: env PATH=$PATH:/usr/local/bin /usr/local/lib/node_modules/pm2/bin/pm2 startup systemd -u {{new_user}} --hp /home/{{new_user}}
+    become: yes
+
+  - name: Installing monit
+    apt: name=monit state=latest
+
+  - name: Generating startup script
+    template: dest=/home/{{new_user}}/zen_node.sh mode=777  owner={{ new_user }} src=/opt/clients/files/zen_node.sh.j2
+
+  - name: Generating monit config
+    template: dest=/etc/monit/monitrc mode=700 src=files/monitrc.j2
+
+  - name: Reload monit
+    shell: monit reload
+
+  - name: Starting zend
+    shell: monit start zend
+
+  - name: Checking monit status
+    shell: monit status
+
+#setam fail2ban
+  - name: Installing fail2ban
+    apt: name=fail2ban state=latest
+
+  - name: Enable fail2ban
+    shell: systemctl enable fail2ban
+
+  - name: Starting fail2ban
+    shell: systemctl start fail2ban
+
+#setam fairwolu
+  - name: Installing ufw
+    apt: name=ufw state=latest
+    ignore_errors: yes
+
+  - name: Setting ufw rights1
+    shell: ufw default allow outgoing
+    ignore_errors: yes
+
+  - name: Setting ufw rights2
+    shell: ufw default deny incoming
+    ignore_errors: yes
+
+  - name: Setting ufw rights3
+    shell: ufw allow ssh/tcp
+    ignore_errors: yes
+
+  - name: Setting ufw rights4
+    shell: ufw limit ssh/tcp
+    ignore_errors: yes
+
+  - name: Setting ufw rights5
+    shell: ufw allow http/tcp
+    ignore_errors: yes
+
+  - name: Setting ufw rights6
+    shell: ufw allow https/tcp
+    ignore_errors: yes
+
+  - name: Setting ufw rights7
+    shell: ufw allow 9033/tcp
+    ignore_errors: yes
+
+  - name: Setting ufw rights8
+    shell: ufw allow 19033/tcp
+    ignore_errors: yes
+
+  - name: Setting ufw rights9
+    shell: ufw logging on
+    ignore_errors: yes
+
+  - name: Setting ufw rights10
+    shell: ufw enable
+    ignore_errors: yes
+
+  - debug:
+          msg: "Setup finished"
