@@ -24,7 +24,7 @@ $ sudo apt-get install ansible
 2. Get repository and give execution privileges to start_setup.sh
 ```bash
 $ git clone https://github.com/kadaj666/zencow_installer.git
-$ cd zencow && chmod +x start_setup.sh
+$ cd zencow_installer && chmod +x start_setup.sh
 ```
 
 ### Usage
