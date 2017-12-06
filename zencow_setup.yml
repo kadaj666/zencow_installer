@@ -219,7 +219,7 @@
     apt: name=monit state=latest
 
   - name: Generating startup script
-    template: dest=/home/{{new_user}}/zen_node.sh mode=777  owner={{ new_user }} src=/opt/clients/files/zen_node.sh.j2
+    template: dest=/home/{{new_user}}/zen_node.sh mode=777  owner={{ new_user }} src=files/zen_node.sh.j2
 
   - name: Generating monit config
     template: dest=/etc/monit/monitrc mode=700 src=files/monitrc.j2
